@@ -1,4 +1,4 @@
-# SubSlayer Backend
+# SubSlayer
 
 Project Title: **SubSlayer (Bounty-Based Micro-Sub Manager)**
 

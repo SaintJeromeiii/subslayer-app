@@ -1,5 +1,5 @@
 {
-  "name": "subslayer-backend",
+  "name": "subslayer",
   "version": "0.1.0",
   "description": "SubSlayer backend for bounty-based micro-subscription management.",
   "private": true,
