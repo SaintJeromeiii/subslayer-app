@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthProvider {
+  CLERK
+  FIREBASE
+}
+
+enum EmailProvider {
+  GMAIL
+  OUTLOOK
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  TRIAL
+  PAUSED
+}
+
+enum DetectionSource {
+  PLAID_RECURRING
+  EMAIL_HEADER
+  USER_CONFIRMED
+}
+
+enum BountyStatus {
+  OPEN
+  IN_PROGRESS
+  CLAIMED
+  PAID
+  EXPIRED
+  CANCELED
+}
+
+model User {
+  id               String         @id @default(cuid())
+  authProvider     AuthProvider
+  externalAuthId   String         @unique
+  email            String         @unique
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  subscriptions    Subscription[]
+  bounties         Bounty[]
+  emailConnections EmailConnection[]
+  plaidItems       PlaidItem[]
+}
+
+model PlaidItem {
+  id                 String         @id @default(cuid())
+  userId             String
+  plaidItemId        String         @unique
+  accessTokenCipher  String
+  institutionName    String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptions      Subscription[]
+}
+
+model EmailConnection {
+  id                   String        @id @default(cuid())
+  userId               String
+  provider             EmailProvider
+  externalAccountId    String
+  refreshTokenCipher   String
+  scope                String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailSignals         EmailSignal[]
+
+  @@unique([provider, externalAccountId])
+}
+
+model Subscription {
+  id                         String             @id @default(cuid())
+  userId                     String
+  plaidItemId                String?
+  merchantNormalizedName     String
+  merchantId                 String?
+  status                     SubscriptionStatus @default(ACTIVE)
+  amountUsd                  Decimal            @db.Decimal(10, 2)
+  currencyCode               String             @default("USD")
+  billingCadenceDays         Int?
+  firstDetectedAt            DateTime           @default(now())
+  lastDetectedAt             DateTime
+  nextExpectedChargeAt       DateTime?
+  isMicroSubscription        Boolean            @default(false)
+  microSubscriptionReason    String?
+  canceledAt                 DateTime?
+  notes                      String?
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  user                       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plaidItem                  PlaidItem?         @relation(fields: [plaidItemId], references: [id], onDelete: SetNull)
+  detections                 SubscriptionDetection[]
+  bounties                   Bounty[]
+
+  @@index([userId, status])
+  @@index([merchantId])
+  @@index([isMicroSubscription, status])
+}
+
+model SubscriptionDetection {
+  id                String          @id @default(cuid())
+  subscriptionId    String
+  source            DetectionSource
+  confidenceScore   Decimal         @db.Decimal(5, 4)
+  detectedAt        DateTime        @default(now())
+  rawPayload        Json
+  subscription      Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, detectedAt])
+}
+
+model EmailSignal {
+  id                 String           @id @default(cuid())
+  emailConnectionId  String
+  providerMessageId  String
+  headerFrom         String?
+  headerSubject      String?
+  matchedKeywords    String[]
+  confidenceScore    Decimal          @db.Decimal(5, 4)
+  receivedAt         DateTime?
+  createdAt          DateTime         @default(now())
+  emailConnection    EmailConnection  @relation(fields: [emailConnectionId], references: [id], onDelete: Cascade)
+
+  @@unique([emailConnectionId, providerMessageId])
+}
+
+model Bounty {
+  id                      String        @id @default(cuid())
+  userId                  String
+  subscriptionId          String
+  title                   String
+  description             String?
+  status                  BountyStatus  @default(OPEN)
+  rewardUsd               Decimal       @db.Decimal(10, 2)
+  eligibleFrom            DateTime      @default(now())
+  expiresAt               DateTime?
+  claimedAt               DateTime?
+  paidAt                  DateTime?
+  proofUrl                String?
+  cancellationEvidenceUrl String?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  user                    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription            Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([subscriptionId, status])
+}
