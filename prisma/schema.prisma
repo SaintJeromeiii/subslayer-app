@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum AuthProvider {
@@ -24,6 +23,19 @@ enum SubscriptionStatus {
   PAUSED
 }
 
+enum SubscriptionState {
+  DETECTED
+  SLAYING
+  SLAIN
+  SHIELDED
+}
+
+enum SubscriptionSource {
+  ACTIVE_REQUEST
+  FREE_TRIAL
+  AUTOMATED_DETECTION
+}
+
 enum DetectionSource {
   PLAID_RECURRING
   EMAIL_HEADER
@@ -39,17 +51,41 @@ enum BountyStatus {
   CANCELED
 }
 
+enum BountyType {
+  BOUNTY
+  SHIELD
+}
+
 model User {
   id               String         @id @default(cuid())
   authProvider     AuthProvider
   externalAuthId   String         @unique
   email            String         @unique
+  lpoaVersion      String?
+  lpoaAcceptedAt   DateTime?
+  lpoaUserAgent    String?
+  lpoaAcceptanceIp String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   subscriptions    Subscription[]
   bounties         Bounty[]
   emailConnections EmailConnection[]
   plaidItems       PlaidItem[]
+  stripeCustomerId String?        @unique
+  sessions         Session[]
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model PlaidItem {
@@ -86,12 +122,15 @@ model Subscription {
   merchantNormalizedName     String
   merchantId                 String?
   status                     SubscriptionStatus @default(ACTIVE)
+  state                      SubscriptionState  @default(DETECTED)
+  source                     SubscriptionSource @default(AUTOMATED_DETECTION)
   amountUsd                  Decimal            @db.Decimal(10, 2)
   currencyCode               String             @default("USD")
   billingCadenceDays         Int?
   firstDetectedAt            DateTime           @default(now())
   lastDetectedAt             DateTime
   nextExpectedChargeAt       DateTime?
+  trialExpiresAt             DateTime?
   isMicroSubscription        Boolean            @default(false)
   microSubscriptionReason    String?
   canceledAt                 DateTime?
@@ -142,6 +181,7 @@ model Bounty {
   title                   String
   description             String?
   status                  BountyStatus  @default(OPEN)
+  type                    BountyType    @default(BOUNTY)
   rewardUsd               Decimal       @db.Decimal(10, 2)
   eligibleFrom            DateTime      @default(now())
   expiresAt               DateTime?

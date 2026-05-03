@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { db } from "../db.js";
-import { verifyAuthHeader } from "../services/auth.js";
+import { verifyAuthRequest } from "../services/auth.js";
 
 export const bountiesRouter = Router();
 
 bountiesRouter.get("/", async (req, res, next) => {
   try {
-    const auth = await verifyAuthHeader(req.header("authorization"));
+    const auth = await verifyAuthRequest(req);
     const user = await db.user.findUnique({
       where: { externalAuthId: auth.externalAuthId },
       include: { bounties: true }

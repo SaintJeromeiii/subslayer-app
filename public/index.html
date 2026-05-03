@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SubSlayer Dashboard</title>
+    <style>
+      body { font-family: Arial, sans-serif; background:#080a0f; color:#f1f5f9; margin:0; padding:24px; }
+      .row { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+      .card { background:#111827; border:1px solid #374151; border-radius:10px; padding:16px; min-width:260px; }
+      .big { font-size:32px; font-weight:700; }
+      .muted { color:#94a3b8; font-size:12px; }
+      button { background:#ef4444; color:white; border:none; border-radius:8px; padding:8px 12px; cursor:pointer; }
+      button.secondary { background:#2563eb; }
+      button.ghost { background:#475569; }
+      input, select { background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:6px; padding:6px; margin-right:8px; margin-bottom:8px; }
+      table { width:100%; border-collapse:collapse; }
+      th, td { border-bottom:1px solid #334155; padding:8px; text-align:left; }
+      #terminal { background:#020617; border:1px solid #1e293b; border-radius:8px; padding:12px; height:280px; overflow:auto; font-family:monospace; white-space:pre-wrap; }
+      .success { color:#22c55e; } .warn { color:#f59e0b; } .error { color:#ef4444; } .info { color:#38bdf8; }
+      .hidden { display:none !important; }
+      .status { margin-left:8px; color:#a3e635; }
+      .modal-bg {
+        position:fixed;
+        inset:0;
+        z-index:9999;
+        background:rgba(2,6,23,0.7);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .modal {
+        width:min(620px, 92vw);
+        max-height:min(720px, 86vh);
+        overflow:auto;
+        background:#111827;
+        border:1px solid #334155;
+        border-radius:10px;
+        padding:16px;
+      }
+      .field { display:flex; flex-direction:column; margin-bottom:8px; }
+      label { font-size:12px; color:#94a3b8; margin-bottom:4px; }
+    </style>
+  </head>
+  <body>
+    <h1>SubSlayer - Leakage Dashboard</h1>
+    <div class="muted">Monthly Waste vs Money Retrieved, with one-click Slay actions.</div>
+
+    <div id="authCard" class="card" style="margin:12px 0;">
+      <h3>Login Session</h3>
+      <div class="field">
+        <label>Email</label>
+        <input id="email" placeholder="you@example.com" style="min-width:320px;" />
+      </div>
+      <div class="field">
+        <label>Provider</label>
+        <select id="provider">
+          <option value="clerk">clerk</option>
+          <option value="firebase">firebase</option>
+        </select>
+      </div>
+      <button class="secondary" type="button" id="loginBtn">Login</button>
+      <button class="ghost" type="button" id="logoutBtn">Logout</button>
+      <span id="authStatus" class="status"></span>
+    </div>
+
+    <div class="card" style="margin:12px 0;">
+      <h3>Onboarding (Stripe pre-auth)</h3>
+      <div class="muted">Requires Limited Power of Attorney acceptance before charging.</div>
+      <div class="field" style="margin-top:10px;">
+        <label>Limited Power of Attorney</label>
+        <pre id="lpoaText" style="white-space:pre-wrap; background:#020617; border:1px solid #334155; border-radius:8px; padding:10px; max-height:220px; overflow:auto;"></pre>
+        <div class="muted" id="lpoaVersionLabel"></div>
+      </div>
+      <label style="display:flex; align-items:flex-start; gap:10px; margin-top:10px;">
+        <input id="lpoaAccept" type="checkbox" />
+        <span>I have read and agree to the Limited Power of Attorney above.</span>
+      </label>
+      <div class="field" style="margin-top:10px;">
+        <label>Stripe payment method id</label>
+        <input id="paymentMethodId" placeholder="pm_..." style="min-width:320px;" />
+      </div>
+      <button class="secondary" type="button" id="onboardBtn">Complete onboarding</button>
+      <span id="onboardStatus" class="status"></span>
+    </div>
+
+    <div class="card" style="margin:12px 0;">
+      <h3>Plaid connection (server-side token exchange)</h3>
+      <div class="muted">Long-lived Plaid access tokens should not be pasted into the browser. Use Link `public_token` exchange on the server.</div>
+      <div class="field" style="margin-top:10px;">
+        <label>link_token (from POST /plaid/link-token)</label>
+        <input id="plaidLinkToken" placeholder="link-..." style="min-width:320px;" />
+      </div>
+      <button class="secondary" type="button" id="plaidLinkTokenBtn">Create link_token</button>
+      <div class="field" style="margin-top:10px;">
+        <label>public_token (from Plaid Link onSuccess)</label>
+        <input id="plaidPublicToken" placeholder="public-..." style="min-width:320px;" />
+      </div>
+      <button class="secondary" type="button" id="plaidExchangeBtn">Exchange public_token</button>
+      <div class="field" style="margin-top:10px;">
+        <label>plaidItemRecordId (saved after exchange)</label>
+        <input id="plaidItemRecordId" placeholder="cl..." style="min-width:320px;" />
+      </div>
+      <button class="secondary" type="button" id="plaidSyncBtn">Sync recurring subscriptions</button>
+      <span id="plaidStatus" class="status"></span>
+    </div>
+
+    <div class="card" style="margin:12px 0;">
+      <h3>Slay execution defaults</h3>
+      <div class="muted">These apply the next time you open the Slay modal.</div>
+      <label style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+        <input id="globalDryRun" type="checkbox" checked />
+        <span>Dry run (recommended)</span>
+      </label>
+      <div class="muted" style="margin-top:10px;">
+        Emergency UI reset:
+        <button class="ghost" type="button" id="forceCloseSlay">Force-close Slay modal</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <div class="muted">Monthly Waste</div>
+        <div id="monthlyWaste" class="big">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="muted">Money Retrieved</div>
+        <div id="moneyRetrieved" class="big">$0.00</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Detected Subscriptions</h3>
+      <table>
+        <thead><tr><th>Merchant</th><th>Amount</th><th>State</th><th>Action</th></tr></thead>
+        <tbody id="subsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>Real-time Mercenary Terminal</h3>
+      <div id="terminal"></div>
+    </div>
+
+    <div id="slayModalBg" class="modal-bg hidden" style="display:none;">
+      <div class="modal" id="slayModal">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+          <h3 style="margin:0;">Slay Subscription</h3>
+          <button class="ghost" type="button" id="slayCloseBtn" aria-label="Close slay modal">Close</button>
+        </div>
+        <div class="muted" id="slayMerchantLabel"></div>
+        <div class="field">
+          <label>Merchant Key</label>
+          <select id="slayMerchant">
+            <option value="netflix">netflix</option>
+            <option value="disney_plus">disney_plus</option>
+            <option value="spotify">spotify</option>
+            <option value="new_york_times">new_york_times</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Login Username/Email</label>
+          <input id="slayUsername" />
+        </div>
+        <div class="field">
+          <label>Login Password</label>
+          <input id="slayPassword" type="password" />
+        </div>
+        <div class="field">
+          <label>Source</label>
+          <select id="slaySource">
+            <option value="ACTIVE_REQUEST">ACTIVE_REQUEST</option>
+            <option value="FREE_TRIAL">FREE_TRIAL</option>
+            <option value="AUTOMATED_DETECTION">AUTOMATED_DETECTION</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Trial Expiry (ISO, optional)</label>
+          <input id="slayTrialExpiresAt" placeholder="2026-06-01T00:00:00.000Z" />
+        </div>
+        <div class="muted" style="margin-top:8px;">
+          Dry-run is controlled above in <b>Slay execution defaults</b>.
+        </div>
+        <div style="margin-top:12px;">
+          <button type="button" id="slaySubmitBtn">Start Slay</button>
+          <button class="ghost" type="button" id="slayCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let eventSource;
+      let selectedSubscriptionId = null;
+
+      const api = async (path, options = {}) => {
+        const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+        const res = await fetch(path, { ...options, headers, credentials: "include" });
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+      };
+      const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
+
+      function appendLog(entry) {
+        const terminal = document.getElementById("terminal");
+        const line = document.createElement("div");
+        line.className = entry.level || "info";
+        line.textContent = `[${new Date(entry.timestamp || Date.now()).toLocaleTimeString()}] ${entry.message}`;
+        terminal.appendChild(line);
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+
+      function appendUiMessage(message, level = "info") {
+        appendLog({ level, message, timestamp: new Date().toISOString() });
+      }
+
+      async function login() {
+        try {
+          const email = document.getElementById("email").value.trim();
+          const provider = document.getElementById("provider").value;
+          await api("/auth/login", { method: "POST", body: JSON.stringify({ email, provider }) });
+          document.getElementById("authStatus").textContent = `Logged in as ${email}`;
+          await loadAll();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Login failed: ${message}`, "error");
+          alert(`Login failed:\n\n${message}`);
+        }
+      }
+
+      async function logout() {
+        try {
+          await api("/auth/logout", { method: "POST" });
+          document.getElementById("authStatus").textContent = "Logged out";
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Logout failed: ${message}`, "error");
+          alert(`Logout failed:\n\n${message}`);
+        }
+      }
+
+      let lpoaVersion = "";
+
+      async function loadLpoa() {
+        const lpoa = await fetch("/users/lpoa").then((r) => r.json());
+        lpoaVersion = lpoa.version;
+        document.getElementById("lpoaText").textContent = lpoa.text;
+        document.getElementById("lpoaVersionLabel").textContent = `Version: ${lpoa.version}`;
+      }
+
+      async function onboard() {
+        try {
+          const paymentMethodId = document.getElementById("paymentMethodId").value.trim();
+          const accept = document.getElementById("lpoaAccept").checked;
+          if (!paymentMethodId) {
+            alert("paymentMethodId is required (Stripe pm_...)");
+            return;
+          }
+          if (!accept) {
+            alert("You must accept the Limited Power of Attorney to continue.");
+            return;
+          }
+
+          const result = await api("/users/onboard", {
+            method: "POST",
+            body: JSON.stringify({
+              paymentMethodId,
+              acceptLpoa: true,
+              lpoaVersion
+            })
+          });
+
+          document.getElementById("onboardStatus").textContent = `Onboarded (preauth ${result.status})`;
+          appendUiMessage(`Onboarding complete. PaymentIntent ${result.preAuthorizationId}`, "success");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Onboarding failed: ${message}`, "error");
+          alert(`Onboarding failed:\n\n${message}`);
+        }
+      }
+
+      async function createPlaidLinkToken() {
+        try {
+          const result = await api("/plaid/link-token", { method: "POST", body: JSON.stringify({}) });
+          document.getElementById("plaidLinkToken").value = result.linkToken;
+          document.getElementById("plaidStatus").textContent = "link_token created";
+          appendUiMessage("Created Plaid link_token. Initialize Plaid Link in your client app with this token.", "success");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Plaid link_token failed: ${message}`, "error");
+          alert(`Plaid link_token failed:\n\n${message}`);
+        }
+      }
+
+      async function exchangePlaidPublicToken() {
+        try {
+          const publicToken = document.getElementById("plaidPublicToken").value.trim();
+          if (!publicToken) {
+            alert("public_token is required");
+            return;
+          }
+          const result = await api("/plaid/item/exchange", {
+            method: "POST",
+            body: JSON.stringify({ publicToken })
+          });
+          document.getElementById("plaidItemRecordId").value = result.plaidItemRecordId;
+          document.getElementById("plaidStatus").textContent = "public_token exchanged";
+          appendUiMessage(`Plaid item saved. plaidItemRecordId=${result.plaidItemRecordId}`, "success");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Plaid exchange failed: ${message}`, "error");
+          alert(`Plaid exchange failed:\n\n${message}`);
+        }
+      }
+
+      async function syncPlaidSubscriptions() {
+        try {
+          const plaidItemRecordId = document.getElementById("plaidItemRecordId").value.trim();
+          const publicToken = document.getElementById("plaidPublicToken").value.trim();
+          if (!plaidItemRecordId && !publicToken) {
+            alert("Provide plaidItemRecordId (recommended) or public_token for one-time exchange.");
+            return;
+          }
+          const body = plaidItemRecordId ? { plaidItemRecordId } : { publicToken };
+          const result = await api("/subscriptions/plaid/recurring-monthly/sync", {
+            method: "POST",
+            body: JSON.stringify(body)
+          });
+          document.getElementById("plaidStatus").textContent = `synced (${result.syncedCount})`;
+          appendUiMessage(`Plaid sync complete. syncedCount=${result.syncedCount}`, "success");
+          await loadAll();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Plaid sync failed: ${message}`, "error");
+          alert(`Plaid sync failed:\n\n${message}`);
+        }
+      }
+
+      function guessMerchantKey(name) {
+        const n = (name || "").toLowerCase();
+        if (n.includes("netflix")) return "netflix";
+        if (n.includes("disney")) return "disney_plus";
+        if (n.includes("spotify")) return "spotify";
+        if (n.includes("new york") || n.includes("nyt")) return "new_york_times";
+        return "spotify";
+      }
+
+      function closeSlayModal() {
+        const bg = document.getElementById("slayModalBg");
+        bg.classList.add("hidden");
+        bg.style.display = "none";
+        selectedSubscriptionId = null;
+      }
+
+      function openSlayModal(sub) {
+        selectedSubscriptionId = sub.id;
+        document.getElementById("slayMerchantLabel").textContent = `${sub.merchantNormalizedName} • ${fmt(sub.amountUsd)}`;
+        document.getElementById("slayMerchant").value = guessMerchantKey(sub.merchantNormalizedName);
+        document.getElementById("slayUsername").value = "";
+        document.getElementById("slayPassword").value = "";
+        document.getElementById("slaySource").value = "ACTIVE_REQUEST";
+        document.getElementById("slayTrialExpiresAt").value = "";
+        const bg = document.getElementById("slayModalBg");
+        bg.classList.remove("hidden");
+        bg.style.display = "flex";
+      }
+
+      async function submitSlay() {
+        if (!selectedSubscriptionId) return;
+        const submitBtn = document.getElementById("slaySubmitBtn");
+        const originalText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Running...";
+
+        try {
+          const merchant = document.getElementById("slayMerchant").value;
+          const username = document.getElementById("slayUsername").value.trim();
+          const password = document.getElementById("slayPassword").value;
+          const source = document.getElementById("slaySource").value;
+          const trialExpiresAt = document.getElementById("slayTrialExpiresAt").value.trim();
+          const dryRun = document.getElementById("globalDryRun").checked;
+
+          appendUiMessage(`Slay requested for subscription ${selectedSubscriptionId} (${merchant}).`, "info");
+
+          const result = await api(`/mercenary/slay/${selectedSubscriptionId}`, {
+            method: "POST",
+            body: JSON.stringify({
+              merchant,
+              username,
+              password,
+              source,
+              trialExpiresAt: trialExpiresAt || undefined,
+              dryRun
+            })
+          });
+
+          appendUiMessage(`Slay API responded: runId=${result.runId ?? "n/a"}`, "success");
+          closeSlayModal();
+          await loadAll();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Slay failed: ${message}`, "error");
+          alert(`Slay failed:\n\n${message}`);
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        }
+      }
+
+      async function loadAll() {
+        try {
+          const me = await fetch("/auth/me", { credentials: "include" }).then((r) => r.json());
+          if (!me.authenticated) {
+            document.getElementById("authStatus").textContent = "Please login first";
+            appendUiMessage("Not authenticated. Click Login first.", "warn");
+            return;
+          }
+
+          const metrics = await api("/dashboard/metrics");
+          document.getElementById("monthlyWaste").textContent = fmt(metrics.leakage.monthlyWaste);
+          document.getElementById("moneyRetrieved").textContent = fmt(metrics.leakage.moneyRetrieved);
+
+          const subs = await api("/subscriptions");
+          const body = document.getElementById("subsBody");
+          body.innerHTML = "";
+          for (const sub of subs.subscriptions) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${sub.merchantNormalizedName}</td><td>${fmt(sub.amountUsd)}</td><td>${sub.state}</td><td></td>`;
+            const td = tr.querySelector("td:last-child");
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = "Slay";
+            btn.onclick = () => openSlayModal(sub);
+            td.appendChild(btn);
+            body.appendChild(tr);
+          }
+
+          if (eventSource) eventSource.close();
+          eventSource = new EventSource("/mercenary/logs/stream");
+          eventSource.onmessage = (event) => appendLog(JSON.parse(event.data));
+          eventSource.onerror = () => appendUiMessage("Log stream disconnected. Refresh page to reconnect.", "warn");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Dashboard load failed: ${message}`, "error");
+        }
+      }
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeSlayModal();
+        }
+      });
+
+      function wireUi() {
+        document.getElementById("loginBtn").addEventListener("click", login);
+        document.getElementById("logoutBtn").addEventListener("click", logout);
+        document.getElementById("onboardBtn").addEventListener("click", onboard);
+        document.getElementById("plaidLinkTokenBtn").addEventListener("click", createPlaidLinkToken);
+        document.getElementById("plaidExchangeBtn").addEventListener("click", exchangePlaidPublicToken);
+        document.getElementById("plaidSyncBtn").addEventListener("click", syncPlaidSubscriptions);
+
+        document.getElementById("slaySubmitBtn").addEventListener("click", submitSlay);
+        document.getElementById("slayCancelBtn").addEventListener("click", closeSlayModal);
+        document.getElementById("slayCloseBtn").addEventListener("click", closeSlayModal);
+        document.getElementById("forceCloseSlay").addEventListener("click", closeSlayModal);
+
+        const bg = document.getElementById("slayModalBg");
+        const modal = document.getElementById("slayModal");
+        bg.addEventListener("click", (event) => {
+          if (event.target === bg) {
+            closeSlayModal();
+          }
+        });
+        modal.addEventListener("click", (event) => event.stopPropagation());
+      }
+
+      function boot() {
+        closeSlayModal();
+        wireUi();
+        loadLpoa().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`LPOA load failed: ${message}`, "error");
+        });
+        loadAll().catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          appendUiMessage(`Startup load failed: ${message}`, "error");
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot);
+      } else {
+        boot();
+      }
+    </script>
+  </body>
+</html>

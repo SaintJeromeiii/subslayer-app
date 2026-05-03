@@ -13,10 +13,15 @@ const EnvSchema = z.object({
   PLAID_CLIENT_ID: z.string().optional(),
   PLAID_SECRET: z.string().optional(),
   PLAID_ENV: z.enum(["sandbox", "development", "production"]).default("sandbox"),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   MICROSOFT_CLIENT_ID: z.string().optional(),
-  MICROSOFT_CLIENT_SECRET: z.string().optional()
+  MICROSOFT_CLIENT_SECRET: z.string().optional(),
+  TOKEN_ENCRYPTION_KEY: z.string().optional()
 });
 
 export const env = EnvSchema.parse(process.env);

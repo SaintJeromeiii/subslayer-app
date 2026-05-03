@@ -6,7 +6,7 @@ Node.js + PostgreSQL backend scaffold for:
 - user authentication (Clerk or Firebase Auth),
 - financial recurring-transaction detection (Plaid),
 - email header analysis (Gmail/Outlook OAuth),
-- subscription and bounty state tracking.
+- subscription and bounty state tracking with Stripe-backed bounty logic.
 
 ## Architecture
 
@@ -25,6 +25,29 @@ Node.js + PostgreSQL backend scaffold for:
 
 Transactions are flagged as micro-subscriptions when they are recurring and amount is between **$0.99 and $50.00** inclusive.
 
+## Bounty Logic Engine
+
+- State machine per subscription: `DETECTED`, `SLAYING`, `SLAIN`, `SHIELDED`
+- `SLAIN` + `ACTIVE_REQUEST` source: creates a `$3.00` `BOUNTY`
+- `SLAIN` + `FREE_TRIAL` source and canceled <=24h before `trialExpiresAt`: creates a `$2.00` `SHIELD`
+- Stripe onboarding pre-authorization endpoint: `POST /users/onboard` creates a manual-capture `$10.00` hold
+- Stripe webhook endpoint: `POST /webhooks/stripe` marks bounties as `PAID` on successful Stripe settlement events when `metadata.bountyId` is supplied
+
+## AI Mercenary (Agentic Workflow)
+
+- LLM cancellation request drafting: `POST /mercenary/generate-cancellation-email`
+- LLM hardship letter drafting (financial hardship / technical dissatisfaction): `POST /mercenary/generate-hardship-letter`
+- Merchant cancel-flow automation (Playwright, dry-run safe by default): `POST /mercenary/automate-cancel`
+- Top-tier merchant support scaffolded for: Netflix, Disney+, Spotify, New York Times
+- Selector registry + screenshot audit trail written to `artifacts/cancellation-runs/<runId>/`
+
+## UI/UX Endpoints and Dashboard
+
+- Leakage metrics API: `GET /dashboard/metrics`
+- Real-time terminal log stream (SSE): `GET /mercenary/logs/stream`
+- One-click slay API: `POST /mercenary/slay/:subscriptionId`
+- Local UI dashboard served at `/` via `public/index.html`
+
 ## Database Schema (Core)
 
 - `Subscription`: normalized merchant, recurring cadence, amount, micro-subscription flags, status.
@@ -37,12 +60,29 @@ Transactions are flagged as micro-subscriptions when they are recurring and amou
 1. Copy env file:
    - `cp .env.example .env`
 2. Set `DATABASE_URL` to your PostgreSQL instance.
-3. Generate Prisma client:
+3. Generate a 32-byte AES key (base64) for token encryption:
+   - `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
+   - Put it in `.env` as `TOKEN_ENCRYPTION_KEY`
+4. Generate Prisma client:
    - `npm run prisma:generate`
-4. Run migration:
+5. Run migration:
    - `npm run prisma:migrate:dev`
-5. Start API:
+6. Start API:
    - `npm run dev`
+
+## Security & Compliance
+
+- **Token encryption**: store third-party tokens using `encryptToken()` from `src/services/tokenVault.ts` (AES-256-GCM). Set `TOKEN_ENCRYPTION_KEY`.
+- **Limited Power of Attorney**: onboarding requires acceptance via `/users/onboard` (`acceptLpoa: true` + matching `lpoaVersion`). Public text is available at `GET /users/lpoa`.
+
+### Where encryption is enforced in API flows
+
+- `POST /plaid/link-token` creates a Plaid Link `link_token` (server-side).
+- `POST /plaid/item/exchange` exchanges a Link `public_token` for an `access_token`, encrypts it into `PlaidItem.accessTokenCipher`, and returns `plaidItemRecordId`.
+- `POST /subscriptions/plaid/recurring-monthly/sync` pulls recurring subscriptions using either:
+  - `plaidItemRecordId` (recommended; uses encrypted token from DB), or
+  - `publicToken` (one-time exchange; still avoids storing long-lived access tokens in the browser)
+- `POST /email/connections` encrypts mailbox `refreshToken` into `EmailConnection.refreshTokenCipher`.
 
 ## Notes
 

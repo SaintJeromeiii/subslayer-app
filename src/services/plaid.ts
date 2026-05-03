@@ -1,6 +1,7 @@
 import type { DetectionSource } from "@prisma/client";
-import { Configuration, PlaidApi, PlaidEnvironments, type TransactionsRecurringGetRequest } from "plaid";
-import { env } from "../config/env.js";
+import type { TransactionsRecurringGetRequest } from "plaid";
+import { decryptToken } from "./tokenVault.js";
+import { getPlaidClient } from "./plaidClient.js";
 
 export const MICRO_SUBSCRIPTION_MIN = 0.99;
 export const MICRO_SUBSCRIPTION_MAX = 50;
@@ -15,25 +16,6 @@ export type RecurringTransactionCandidate = {
   payload: Record<string, unknown>;
 };
 
-function getPlaidClient(): PlaidApi {
-  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) {
-    throw new Error("Missing Plaid credentials. Set PLAID_CLIENT_ID and PLAID_SECRET.");
-  }
-
-  const environment = PlaidEnvironments[env.PLAID_ENV];
-  const config = new Configuration({
-    basePath: environment,
-    baseOptions: {
-      headers: {
-        "PLAID-CLIENT-ID": env.PLAID_CLIENT_ID,
-        "PLAID-SECRET": env.PLAID_SECRET
-      }
-    }
-  });
-
-  return new PlaidApi(config);
-}
-
 export function isMicroSubscription(amountUsd: number): boolean {
   return amountUsd >= MICRO_SUBSCRIPTION_MIN && amountUsd <= MICRO_SUBSCRIPTION_MAX;
 }
@@ -42,11 +24,19 @@ export function mapPlaidDetectionSource(): DetectionSource {
   return "PLAID_RECURRING";
 }
 
+function resolvePlaidAccessToken(accessToken: string): string {
+  if (accessToken.startsWith("enc:v1:")) {
+    return decryptToken(accessToken);
+  }
+  return accessToken;
+}
+
 export async function fetchRecurringCandidates(accessToken: string): Promise<RecurringTransactionCandidate[]> {
   const client = getPlaidClient();
+  const resolvedAccessToken = resolvePlaidAccessToken(accessToken);
 
   const request: TransactionsRecurringGetRequest = {
-    access_token: accessToken
+    access_token: resolvedAccessToken
   };
 
   const recurring = await client.transactionsRecurringGet(request);
